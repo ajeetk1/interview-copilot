@@ -1,7 +1,9 @@
 {
-  "name": "interview-copilot---template-react-ts",
+  "name": "interview-copilot",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "An AI-powered desktop copilot for interview preparation.",
+  "author": "ajeetk1",
   "type": "module",
   "scripts": {
     "dev": "vite",
