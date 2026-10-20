@@ -21,7 +21,7 @@
 
 .brand {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   padding: 0 5px;
 }
@@ -735,9 +735,10 @@ p {
 
 .bottom-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
   gap: 17px;
   margin-top: 17px;
+  width: 100%;
 }
 
 .mini-panel {
@@ -773,36 +774,39 @@ p {
 
 .mini-panel > div:nth-child(2) {
   display: grid;
+  flex: 1;
   gap: 4px;
   min-width: 0;
 }
 
 .mini-label {
   color: #989caf;
-  font-size: 8px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.9px;
 }
 
 .mini-panel strong {
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .mini-panel p {
   margin: 0;
   color: #9296a9;
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
 .mini-arrow {
+  flex-shrink: 0;
   margin-left: auto;
   color: #a4a7b7;
 }
 
 .page-footer {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-top: 26px;
@@ -928,6 +932,10 @@ p {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
+  .bottom-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
   .question-panel,
   .answer-panel {
     padding: 14px;
@@ -994,4 +1002,54 @@ p {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ===== Consistent UI Typography ===== */
+/* ===== Typography: minimum 13px ===== */
+.app-shell {
+  font-size: 13px;
+}
+
+.app-shell p,
+.app-shell span,
+.app-shell label,
+.app-shell button,
+.app-shell input,
+.app-shell textarea,
+.app-shell select,
+.app-shell strong,
+.app-shell small {
+  font-size: max(13px, 1em);
+}
+
+/* Keep headings prominent */
+.app-shell h1 {
+  font-size: clamp(29px, 3.1vw, 42px);
+}
+
+.app-shell h2 {
+  font-size: 17px;
+}
+
+.app-shell h3 {
+  font-size: 14px;
+}
+
+.app-shell .brand-caption,
+.app-shell .workspace-label,
+.app-shell .user-info strong,
+.app-shell .user-info span,
+.app-shell .breadcrumbs,
+.app-shell .status-pill,
+.app-shell .eyebrow,
+.app-shell .section-heading p,
+.app-shell .panel-heading p,
+.app-shell .question-number,
+.app-shell .question-copy span,
+.app-shell .panel-footer,
+.app-shell .ai-label,
+.app-shell .mini-label,
+.app-shell .mini-panel p,
+.app-shell .page-footer {
+  font-size: 13px;
 }

@@ -74,7 +74,7 @@ function App() {
         <div className="brand">
           <div className="brand-icon">✳</div>
           <div>
-            <div className="brand-name">interview<span>copilot</span></div>
+            <div className="brand-name">Interview <span>Copilot</span></div>
             <div className="brand-caption">YOUR AI WORKSPACE</div>
           </div>
         </div>
