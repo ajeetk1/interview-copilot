@@ -7,8 +7,7 @@ const questionLeadIn =
 const indirectInterviewLeadIn =
   /^(?:i want to understand|i would like to understand|i'd like to understand)\s+(?:how|what|why|whether)\b/i
 const tutorialQuestionFraming =
-  /\b(?:in this (?:video|tutorial|lesson|guide|course)|(?:common|typical|sample|practice|example) interview questions?|(?:sample|practice|example) questions?|sample answers?|interviewers? (?:often|sometimes|might|may|will) ask|you (?:might|may|could|will) be asked|how to answer (?:this|these|an?) interview question)\b/i
-
+  /\b(?:in this (?:video|tutorial|lesson|guide|course)|(?:common|typical|sample|practice|example) interview questions?|(?:sample|practice|example) questions?|sample answers?|interviewers? (?:often|sometimes|might|may|will) ask|you (?:might|may|could|will) be asked|how to answer (?:this|these|an?) interview question|here(?:'s| is) (?:a |the )?(?:quick |short |sample |example )?answer(?: to it| to this question)?|that(?:'s| is) (?:a |an )?(?:great|good|brilliant|perfect|excellent) answer|here(?:'s| is) (?:a |an )?(?:great|good|brilliant|perfect|excellent) answer|that common interview question|question number \w+|now this question is going to come up during your interview)\b/i
 export function getQuestionCandidates(text: string): string[] {
   return (text.match(/[^.!?]+[.!?]?/g) ?? [])
     .map((sentence) => sentence.replace(/\s+/g, ' ').trim())
