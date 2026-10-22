@@ -479,6 +479,32 @@ p {
   box-shadow: 0 4px 16px #29345905;
 }
 
+.transcript-content {
+  min-height: 100px;
+  margin-top: 18px;
+  color: #41455c;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.transcript-preview {
+  margin-top: 8px;
+  color: #777c92;
+}
+
+.transcript-preview-label {
+  display: block;
+  margin-bottom: 3px;
+  color: #8a8ea2;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+}
+
+.transcript-placeholder {
+  color: #9a9eb0;
+}
+
 .question-panel,
 .answer-panel {
   padding: 18px;
@@ -657,6 +683,17 @@ p {
   font-size: 10px;
   line-height: 1.95;
   white-space: pre-wrap;
+}
+
+.answer-error {
+  margin: 17px 0;
+  padding: 11px;
+  border: 1px solid #f1d7d9;
+  border-radius: 8px;
+  background: #fff7f7;
+  color: #a43d48;
+  font-size: 10px;
+  line-height: 1.6;
 }
 
 .answer-tips {

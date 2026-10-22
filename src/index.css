@@ -5,7 +5,7 @@
   font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size:20px;
   color: #20243a;
-  background: #A6EFFD;
+  background: #f8f9fc;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -29,7 +29,7 @@ body {
   min-width: 780px;
   min-height: 100vh;
   font-size:14px;
-  background-color: #A6EFFD;
+  background-color: #f8f9fc;
 
 }
 

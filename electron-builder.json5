@@ -9,7 +9,14 @@
   },
   "files": [
     "dist",
-    "dist-electron"
+    "dist-electron",
+    "audio-prototype/deepgram-bridge.cjs"
+  ],
+  "extraResources": [
+    {
+      "from": "audio-prototype/system-audio-streamer",
+      "to": "audio-prototype/system-audio-streamer"
+    }
   ],
   "mac": {
     "target": [

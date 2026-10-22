@@ -1,11 +1,20 @@
-
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import {
+  appendTranscript,
+  getQuestionCandidates,
+  getTranscriptRemainder,
+  isTutorialQuestionExample,
+  normalizeQuestion,
+} from './transcript-utils'
 import './App.css'
 
 type Question = {
   id: number
   question: string
   answer: string
+  answerStatus: 'loading' | 'success' | 'error'
+  answerSource: 'sample' | 'generated'
+  answerError?: string
   time: string
 }
 
@@ -15,6 +24,8 @@ const initialQuestions: Question[] = [
     question: 'Tell me about yourself and your experience with AI.',
     answer:
       'I am a full-stack AI engineer focused on building practical AI products. I work with Python, FastAPI, LLMs, RAG, and modern frontend technologies. I enjoy turning complex workflows into reliable, useful applications.',
+    answerStatus: 'success',
+    answerSource: 'sample',
     time: '10:42 AM',
   },
   {
@@ -22,6 +33,8 @@ const initialQuestions: Question[] = [
     question: 'How would you design a reliable AI agent?',
     answer:
       'I would start by defining the agent’s task and boundaries, then connect the necessary tools through structured APIs. I would add validation, error handling, human approval for sensitive actions, and observability so every important decision can be traced.',
+    answerStatus: 'success',
+    answerSource: 'sample',
     time: '10:44 AM',
   },
 ]
@@ -29,18 +42,246 @@ const initialQuestions: Question[] = [
 function App() {
   const [activeTab, setActiveTab] = useState('Overview')
   const [isListening, setIsListening] = useState(false)
-  const [activeQuestion, setActiveQuestion] = useState(0)
+  const [selectedQuestionId, setSelectedQuestionId] = useState<number | null>(
+    initialQuestions[0]?.id ?? null,
+  )
   const [questions, setQuestions] = useState(initialQuestions)
+  const questionsRef = useRef(initialQuestions)
+  const knownQuestionKeysRef = useRef(
+    new Set(initialQuestions.map((item) => normalizeQuestion(item.question))),
+  )
+  const seenFinalSegmentsRef = useRef(new Set<string>())
+  const seenEventIdsRef = useRef(new Set<number>())
+  const finalizedAudioEndRef = useRef(0)
+  const nextQuestionIdRef = useRef(
+    Math.max(0, ...initialQuestions.map((item) => item.id)) + 1,
+  )
   const [copied, setCopied] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
+  const [transcript, setTranscript] = useState('')
+  const transcriptRef = useRef('')
+  const [liveTranscript, setLiveTranscript] = useState('')
+  const [liveTranscriptStart, setLiveTranscriptStart] = useState<number | null>(null)
+  const [transcriptionError, setTranscriptionError] = useState('')
   const [profile, setProfile] = useState(
     'Full-stack AI engineer experienced with Python, FastAPI, LLMs, RAG, and AI agents.',
   )
+  const profileRef = useRef(profile)
+  profileRef.current = profile
 
-  const currentQuestion = questions[activeQuestion]
+  useEffect(() => {
+    const updateQuestion = (id: number, updates: Partial<Question>) => {
+      const next = questionsRef.current.map((item) =>
+        item.id === id ? { ...item, ...updates } : item,
+      )
+      questionsRef.current = next
+      setQuestions(next)
+    }
+
+    const classifyAndGenerateAnswer = async (
+      candidate: string,
+      context: string,
+    ) => {
+      if (isTutorialQuestionExample(candidate, context)) return
+
+      try {
+        const result: unknown = await window.ipcRenderer.invoke(
+          'questions:classify',
+          { segment: candidate, context },
+        )
+        if (
+          typeof result !== 'object' ||
+          result === null ||
+          !('is_interview_question' in result) ||
+          result.is_interview_question !== true ||
+          !('question' in result) ||
+          typeof result.question !== 'string' ||
+          !('confidence' in result) ||
+          typeof result.confidence !== 'number' ||
+          result.confidence < 0.8
+        ) {
+          return
+        }
+
+        const questionText = result.question.trim()
+        const key = normalizeQuestion(questionText)
+        if (
+          !questionText ||
+          !key ||
+          normalizeQuestion(candidate) !== key ||
+          knownQuestionKeysRef.current.has(key)
+        ) {
+          return
+        }
+        knownQuestionKeysRef.current.add(key)
+
+        const question: Question = {
+          id: nextQuestionIdRef.current++,
+          question: questionText,
+          answer: '',
+          answerStatus: 'loading',
+          answerSource: 'generated',
+          time: new Date().toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        }
+        const nextQuestions = [...questionsRef.current, question]
+        questionsRef.current = nextQuestions
+        setQuestions(nextQuestions)
+        setSelectedQuestionId(question.id)
+        setActiveTab('Session')
+
+        try {
+          const answerResult: unknown = await window.ipcRenderer.invoke(
+            'answers:generate',
+            { question: question.question, profile: profileRef.current },
+          )
+          if (
+            typeof answerResult !== 'object' ||
+            answerResult === null ||
+            !('answer' in answerResult) ||
+            typeof answerResult.answer !== 'string' ||
+            !answerResult.answer.trim()
+          ) {
+            throw new Error('Answer service returned an invalid answer.')
+          }
+          updateQuestion(question.id, {
+            answer: answerResult.answer.trim(),
+            answerStatus: 'success',
+            answerSource: 'generated',
+            answerError: undefined,
+          })
+        } catch (error) {
+          updateQuestion(question.id, {
+            answer: '',
+            answerStatus: 'error',
+            answerError:
+              error instanceof Error
+                ? error.message
+                : 'Could not generate an answer.',
+          })
+        }
+      } catch (error) {
+        setTranscriptionError(
+          error instanceof Error
+            ? `Question classification failed: ${error.message}`
+            : 'Question classification failed.',
+        )
+      }
+    }
+
+    const handleTranscript = (
+      _event: unknown,
+      payload: {
+        type: 'live' | 'final'
+        text: string
+        segmentId?: string
+        eventId?: number
+        audioStart?: number
+        audioDuration?: number
+      },
+    ) => {
+      if (
+        typeof payload.eventId === 'number' &&
+        seenEventIdsRef.current.has(payload.eventId)
+      ) {
+        return
+      }
+      if (typeof payload.eventId === 'number') {
+        seenEventIdsRef.current.add(payload.eventId)
+        if (seenEventIdsRef.current.size > 5000) {
+          const oldestEventId = seenEventIdsRef.current.values().next().value
+          if (oldestEventId !== undefined) {
+            seenEventIdsRef.current.delete(oldestEventId)
+          }
+        }
+      }
+
+      const text = payload.text.trim()
+      if (!text) return
+
+      if (payload.type === 'live') {
+        setLiveTranscript(text)
+        setLiveTranscriptStart(
+          typeof payload.audioStart === 'number' ? payload.audioStart : null,
+        )
+        return
+      }
+
+      if (payload.segmentId) {
+        if (seenFinalSegmentsRef.current.has(payload.segmentId)) {
+          setLiveTranscript('')
+          setLiveTranscriptStart(null)
+          return
+        }
+        seenFinalSegmentsRef.current.add(payload.segmentId)
+        if (seenFinalSegmentsRef.current.size > 5000) {
+          const oldestSegmentId = seenFinalSegmentsRef.current.values().next().value
+          if (oldestSegmentId !== undefined) {
+            seenFinalSegmentsRef.current.delete(oldestSegmentId)
+          }
+        }
+      }
+
+      if (
+        typeof payload.audioStart === 'number' &&
+        typeof payload.audioDuration === 'number'
+      ) {
+        finalizedAudioEndRef.current = Math.max(
+          finalizedAudioEndRef.current,
+          payload.audioStart + payload.audioDuration,
+        )
+      }
+      const recentContext = transcriptRef.current.slice(-1600)
+      const nextTranscript = appendTranscript(transcriptRef.current, text)
+      transcriptRef.current = nextTranscript
+      setTranscript(nextTranscript)
+      setLiveTranscript('')
+      setLiveTranscriptStart(null)
+
+      for (const candidate of getQuestionCandidates(text)) {
+        void classifyAndGenerateAnswer(
+          candidate,
+          `${recentContext} ${text}`.slice(-4000),
+        )
+      }
+    }
+
+    const handleTranscriptionError = (_event: unknown, message: string) => {
+      setTranscriptionError(message)
+      setIsListening(false)
+      setLiveTranscript('')
+      setLiveTranscriptStart(null)
+    }
+    const handleTranscriptionStopped = () => {
+      setIsListening(false)
+      setLiveTranscript('')
+      setLiveTranscriptStart(null)
+    }
+
+    window.ipcRenderer.on('transcription:update', handleTranscript)
+    window.ipcRenderer.on('transcription:error', handleTranscriptionError)
+    window.ipcRenderer.on('transcription:stopped', handleTranscriptionStopped)
+    return () => {
+      window.ipcRenderer.off('transcription:update', handleTranscript)
+      window.ipcRenderer.off('transcription:error', handleTranscriptionError)
+      window.ipcRenderer.off('transcription:stopped', handleTranscriptionStopped)
+    }
+  }, [])
+
+
+  const currentQuestion =
+    questions.find((item) => item.id === selectedQuestionId) ?? questions[0]
+  const hasAudioOverlap =
+    liveTranscriptStart !== null &&
+    liveTranscriptStart < finalizedAudioEndRef.current
+  const visibleLiveTranscript = hasAudioOverlap
+    ? getTranscriptRemainder(transcript, liveTranscript)
+    : liveTranscript
 
   async function copyAnswer() {
-    if (!currentQuestion) return
+    if (!currentQuestion || currentQuestion.answerStatus !== 'success') return
 
     try {
       await navigator.clipboard.writeText(currentQuestion.answer)
@@ -53,18 +294,22 @@ function App() {
 
   function addDemoQuestion() {
     const next: Question = {
-      id: Date.now(),
+      id: nextQuestionIdRef.current++,
       question: 'How do you evaluate the quality of an AI application?',
       answer:
         'I define measurable evaluation criteria, create representative test cases, and measure accuracy, latency, and cost. For LLM applications, I also evaluate grounding and failure cases, then use production feedback to improve the system.',
+      answerStatus: 'success',
+      answerSource: 'sample',
       time: new Date().toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit',
       }),
     }
 
-    setQuestions((previous) => [...previous, next])
-    setActiveQuestion(questions.length)
+    const updatedQuestions = [...questionsRef.current, next]
+    questionsRef.current = updatedQuestions
+    setQuestions(updatedQuestions)
+    setSelectedQuestionId(next.id)
     setActiveTab('Session')
   }
 
@@ -183,21 +428,83 @@ function App() {
               </strong>
               <span>
                 {isListening
-                  ? 'Listening is enabled in the interface. Audio integration is coming next.'
+                  ? 'Capturing system audio and transcribing it with Deepgram.'
                   : 'Start a practice session and keep everything in one place.'}
               </span>
             </div>
             <button
               className={`primary-button ${isListening ? 'stop-button' : ''}`}
-              onClick={() => {
-                setIsListening((value) => !value)
-                setActiveTab('Session')
+              onClick={async () => {
+                setTranscriptionError('')
+
+                try {
+                  if (isListening) {
+                    await window.ipcRenderer.invoke('transcription:stop')
+                    setIsListening(false)
+                    setLiveTranscript('')
+                    setLiveTranscriptStart(null)
+                  } else {
+                    transcriptRef.current = ''
+                    setTranscript('')
+                    setLiveTranscript('')
+                    setLiveTranscriptStart(null)
+                    finalizedAudioEndRef.current = 0
+                    seenEventIdsRef.current.clear()
+                    seenFinalSegmentsRef.current.clear()
+                    await window.ipcRenderer.invoke('transcription:start')
+                    setIsListening(true)
+                  }
+
+                  setActiveTab('Session')
+                } catch (error) {
+                  setIsListening(false)
+                  setTranscriptionError(
+                    error instanceof Error
+                      ? error.message
+                      : 'Could not control transcription',
+                  )
+                }
               }}
             >
               <span>{isListening ? 'Ⅱ' : '▶'}</span>
               {isListening ? 'Pause session' : 'Start session'}
             </button>
           </section>
+
+          <section className="panel" style={{ marginTop: 24, padding: 24 }}>
+  <div className="panel-heading">
+    <div>
+      <h3>Live transcript</h3>
+      <p>
+        {isListening
+          ? 'Transcribing system audio with Deepgram'
+          : 'Start a session to capture interview audio'}
+      </p>
+    </div>
+    <span className="count-badge">{isListening ? 'LIVE' : 'READY'}</span>
+  </div>
+
+  {transcriptionError && (
+    <p role="alert" style={{ color: '#d33' }}>
+      {transcriptionError}
+    </p>
+  )}
+
+  <div className="transcript-content">
+    {transcript && <div className="transcript-final">{transcript}</div>}
+    {visibleLiveTranscript && (
+      <div className="transcript-preview">
+        <span className="transcript-preview-label">LIVE PREVIEW</span>
+        {visibleLiveTranscript}
+      </div>
+    )}
+    {!transcript && !visibleLiveTranscript && (
+      <span className="transcript-placeholder">
+        Transcript will appear here when audio is detected.
+      </span>
+    )}
+  </div>
+</section>
 
           <div className="section-heading">
             <div>
@@ -228,9 +535,9 @@ function App() {
                 {questions.map((item, index) => (
                   <button
                     key={item.id}
-                    className={`question-item ${index === activeQuestion ? 'selected' : ''}`}
+                    className={`question-item ${item.id === selectedQuestionId ? 'selected' : ''}`}
                     onClick={() => {
-                      setActiveQuestion(index)
+                      setSelectedQuestionId(item.id)
                       setActiveTab('Session')
                     }}
                   >
@@ -248,7 +555,7 @@ function App() {
 
               <div className="panel-footer">
                 <span className="footer-indicator" />
-                Demo questions · Audio detection not connected yet
+                Interview-style questions from finalized transcript segments
               </div>
             </div>
 
@@ -259,7 +566,11 @@ function App() {
                   <h3>Suggested answer</h3>
                   <p>Structured, natural, and to the point</p>
                 </div>
-                <span className="ai-label">AI CONCEPT</span>
+                <span className="ai-label">
+                  {currentQuestion?.answerSource === 'generated'
+                    ? 'AI SUGGESTION'
+                    : 'SAMPLE'}
+                </span>
               </div>
 
               {currentQuestion ? (
@@ -269,20 +580,36 @@ function App() {
                     <p>{currentQuestion.question}</p>
                   </div>
 
-                  <div className="answer-content">{currentQuestion.answer}</div>
-
-                  <div className="answer-tips">
-                    <span className="tip-icon">✦</span>
-                    <p>
-                      <strong>Delivery tip</strong>
-                      <br />
-                      Start with the main point, then support it with a
-                      concrete example from your experience.
+                  {currentQuestion.answerStatus === 'loading' ? (
+                    <div className="answer-content" role="status">
+                      Generating an answer suggestion...
+                    </div>
+                  ) : currentQuestion.answerStatus === 'error' ? (
+                    <p className="answer-error" role="alert">
+                      {currentQuestion.answerError}
                     </p>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="answer-content">{currentQuestion.answer}</div>
+
+                      <div className="answer-tips">
+                        <span className="tip-icon">✦</span>
+                        <p>
+                          <strong>Delivery tip</strong>
+                          <br />
+                          Use a real example from your experience to support the
+                          main point.
+                        </p>
+                      </div>
+                    </>
+                  )}
 
                   <div className="answer-actions">
-                    <button className="secondary-button" onClick={copyAnswer}>
+                    <button
+                      className="secondary-button"
+                      onClick={copyAnswer}
+                      disabled={currentQuestion.answerStatus !== 'success'}
+                    >
                       {copied ? '✓ Copied' : '▢ Copy answer'}
                     </button>
                     <button
